@@ -5,8 +5,8 @@ module.exports = {
   mode: 'development',
   entry: {
     background: './background.js',
-    popup: './popup/popup.js',
-    content: './content/contentScript.js'
+    'popup/popup': './popup/popup.js',
+    'content/contentScript': './content/contentScript.js'
   },
   output: {
     path: path.resolve(__dirname, 'dist'),

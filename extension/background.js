@@ -35,6 +35,12 @@ chrome.runtime.onInstalled.addListener(() => {
   loadServerSettings();
 });
 
+// Ensure checks restart when the browser starts.
+chrome.runtime.onStartup.addListener(() => {
+  startReminderChecks();
+  loadServerSettings();
+});
+
 // Listen for messages from content scripts or popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'API_REQUEST') {
@@ -89,6 +95,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     handleConversationalReply(message.issueKey, message.message)
       .then(result => sendResponse({ success: true, data: result }))
       .catch(error => sendResponse({ success: false, error: error.message }));
+    return true;
+  }
+
+  if (message.type === 'JIRA_CONTEXT') {
+    chrome.storage.local.set({
+      lastJiraContext: {
+        ...message.data,
+        updatedAt: Date.now()
+      }
+    }, () => sendResponse({ success: true }));
+    return true;
+  }
+
+  if (message.type === 'OPEN_POPUP') {
+    chrome.windows.create({
+      url: chrome.runtime.getURL('popup/popup.html'),
+      type: 'popup',
+      width: 420,
+      height: 680,
+      focused: true
+    }, () => sendResponse({ success: true }));
+    return true;
+  }
+
+  if (message.type === 'GET_LAST_JIRA_CONTEXT') {
+    chrome.storage.local.get('lastJiraContext', (result) => {
+      sendResponse({ success: true, data: result.lastJiraContext || null });
+    });
     return true;
   }
 });
@@ -190,6 +224,10 @@ async function processNotificationQueue() {
 // Show a reminder notification
 function showReminderNotification(reminder) {
   const notificationId = `reminder-${reminder.key}-${Date.now()}`;
+
+  if (!Array.isArray(reminder.actions)) {
+    reminder.actions = [];
+  }
   
   // Store reminder data for action handling
   chrome.storage.local.set({
@@ -278,9 +316,13 @@ async function handleNotificationAction(notificationId, action, issueKey) {
 
 // Show reply popup for conversational responses
 function showReplyPopup(notificationId, issueKey) {
+  const popupUrl = new URL(chrome.runtime.getURL('popup/reply.html'));
+  popupUrl.searchParams.set('id', notificationId);
+  popupUrl.searchParams.set('key', issueKey);
+
   // Create popup with input field
   chrome.windows.create({
-    url: `popup/reply.html?id=${notificationId}&key=${issueKey}`,
+    url: popupUrl.toString(),
     type: 'popup',
     width: 400,
     height: 200,
@@ -374,7 +416,7 @@ function showNotification(title, message, actions = []) {
 }
 
 // API request handling
-async function handleApiRequest(endpoint, method = 'GET', data = null) {
+async function handleApiRequest(endpoint, method = 'GET', data = null, allowRefresh = true) {
   const serverUrl = await getServerUrl();
   const url = `${serverUrl}${endpoint}`;
   
@@ -394,11 +436,11 @@ async function handleApiRequest(endpoint, method = 'GET', data = null) {
     const response = await fetch(url, options);
     if (!response.ok) {
       // If 401 Unauthorized, try to refresh auth
-      if (response.status === 401) {
+      if (allowRefresh && response.status === 401) {
         const isRefreshed = await refreshAuth();
         if (isRefreshed) {
           // Retry the request after successful refresh
-          return handleApiRequest(endpoint, method, data);
+          return handleApiRequest(endpoint, method, data, false);
         }
       }
       throw new Error(`Server responded with ${response.status}: ${response.statusText}`);
@@ -523,6 +565,8 @@ async function refreshAuth() {
 checkAuthStatus().then(status => {
   console.log('Initial auth status:', status.authenticated ? 'Authenticated' : 'Not authenticated');
 });
+
+startReminderChecks();
 
 // Load settings from the server
 async function loadServerSettings() {

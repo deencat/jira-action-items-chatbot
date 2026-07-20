@@ -4,16 +4,21 @@
  */
 
 // Check if we're on a Jira page
-const isJiraPage = document.location.href.includes('atlassian.net') || 
-                   document.location.href.includes('jira');
+const isJiraPage = window.location.hostname.endsWith('atlassian.net');
 
 // Initialize when the DOM is fully loaded
-document.addEventListener('DOMContentLoaded', () => {
+function boot() {
   if (isJiraPage) {
     console.log('Jira page detected, initializing content script');
     initializeJiraIntegration();
   }
-});
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', boot);
+} else {
+  boot();
+}
 
 // Initialize Jira specific functionality
 function initializeJiraIntegration() {

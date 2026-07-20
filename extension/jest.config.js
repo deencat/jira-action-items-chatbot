@@ -6,8 +6,8 @@ module.exports = {
   },
   collectCoverage: true,
   collectCoverageFrom: [
-    'popup/*.js',
-    'content/*.js',
+    'popup/**/*.js',
+    'content/**/*.js',
     'background.js'
   ],
   coverageDirectory: 'coverage',
